@@ -2,6 +2,12 @@
 
 这个项目让 UNIHIKER K10 + HUSKYLENS 2 自己完成单摆实验：HUSKYLENS 2 用物体追踪识别摆球中心，K10 通过 I2C 读取坐标，并在屏幕上计算/显示单摆公式、频率、振幅和重力加速度 `g`。不需要 TF 卡，也不保存图片。
 
+## 演示视频
+
+<video src="./单摆实验_测重力加速度.mp4" controls width="100%"></video>
+
+如果 GitHub 没有直接显示播放器，可以打开 [单摆实验_测重力加速度.mp4](./单摆实验_测重力加速度.mp4) 查看实验演示。
+
 ## 硬件方案
 
 K10 只负责采样、计算和显示；HUSKYLENS 2 负责视觉定位。这样比只用 K10 内置摄像头更稳定，背景和光照对识别结果的影响更小。
@@ -24,7 +30,7 @@ SCL                                    -> SCL
 
 ## 1. 烧录前设置参数
 
-打开 [src/main.cpp](/Users/rockets/Documents/k10%20单摆实验/src/main.cpp)，先改顶部这些常量：
+打开 [src/main.cpp](./src/main.cpp)，先改顶部这些常量：
 
 ```cpp
 constexpr float kPendulumLengthM = 0.420f;  // 摆长：悬点到摆球中心，单位 m
@@ -79,4 +85,4 @@ f, T, A, theta, g, fps
 
 ## 可选：电脑端复核
 
-[tools/analyze_pendulum.py](/Users/rockets/Documents/k10%20单摆实验/tools/analyze_pendulum.py) 仍保留，可用于视频或图片序列复核结果。
+[tools/analyze_pendulum.py](./tools/analyze_pendulum.py) 仍保留，可用于视频或图片序列复核结果。
