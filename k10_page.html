@@ -1,0 +1,128 @@
+
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K10 单摆</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#17202a;background:#f6f7f9}
+body{margin:0}main{max-width:800px;margin:0 auto;padding:18px}
+h1{font-size:24px;margin:0}h2{font-size:18px;margin:18px 0 8px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}button,a.button{border:1px solid #0f766e;background:#0f766e;color:white;border-radius:6px;padding:9px 12px;text-decoration:none;font-size:14px;cursor:pointer}
+button.secondary,a.secondary{background:white;color:#0f766e}button:disabled{opacity:.5}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+.metric{background:white;border:1px solid #d7dde4;border-radius:8px;padding:10px}.label{font-size:12px;color:#5b6775}.value{font-size:22px;font-weight:700;margin-top:4px}
+table{border-collapse:collapse;width:100%;background:white;border:1px solid #d7dde4}th,td{padding:7px 8px;border-bottom:1px solid #e7ebef;text-align:right}th:first-child,td:first-child{text-align:left}th{background:#edf2f7;font-size:13px}td{font-variant-numeric:tabular-nums}
+.panel{margin-top:14px}.status{font-weight:700}.ok{color:#11805a}.bad{color:#c2410c}.muted{color:#5b6775}.box{margin-top:18px;background:white;border:1px solid #d7dde4;border-radius:8px;padding:12px}
+input{max-width:100%;box-sizing:border-box;border:1px solid #bcc7d3;border-radius:6px;padding:8px;font-size:14px}label{display:block;font-size:13px;color:#5b6775;margin:8px 0 4px}.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end}
+</style></head><body><main>
+<header><div><h1>K10 单摆</h1><div class="muted" id="calibStatus"></div></div>
+<div class="actions"><button id="btnStart" onclick="startCapture()">开始采样</button><a class="button secondary" href="/samples.csv">下载 CSV</a></div></header>
+<section class="grid" id="metrics"></section>
+<section class="box" id="calibBox" style="display:none"><h2>首次校准</h2><div class="muted">选择地点后自动填入标准重力加速度，点击校准自动反推摆长</div><div class="formgrid" style="margin-top:8px"><div><label>地点</label><select id="loc" onchange="setLoc()"><option value="9.794">上海 9.794</option><option value="9.801">北京 9.801</option><option value="9.788">广州 9.788</option><option value="9.80" selected>其他</option></select></div><div><label>标准 g / m/s²</label><input id="refG" type="number" min="9.7" max="9.9" step="0.001" value="9.80"></div><button onclick="calibrate()">开始校准</button></div></section>
+<section class="box"><h2>摆长</h2><div class="muted">校准后自动填入，也可手动修改</div><div class="formgrid" style="margin-top:8px"><div><label>摆长 L / m</label><input id="length" type="number" min="0.05" max="5" step="0.001"></div><button onclick="saveLength()">保存</button></div></section>
+<section class="panel"><h2>计算结果</h2><table><tbody id="result"></tbody></table></section>
+<section class="panel"><h2>运动轨迹</h2><canvas id="plot" style="width:100%;max-width:600px;height:auto;border:1px solid #d7dde4;border-radius:6px"></canvas></section>
+<section class="panel"><h2>最近样本</h2><table><thead><tr><th>#</th><th>t/s</th><th>x/px</th><th>y/px</th></tr></thead><tbody id="samples"></tbody></table></section>
+<section class="box"><h2>配网</h2><div class="muted" id="net"></div><div class="formgrid"><div><label>WiFi SSID</label><input id="ssid"></div><div><label>WiFi 密码</label><input id="pass" type="password"></div><button onclick="saveWifi()">保存并连接</button></div></section>
+<section class="box"><h2>OTA 更新</h2><form method="POST" action="/ota" enctype="multipart/form-data"><input type="file" name="firmware" required> <button type="submit">上传固件</button></form></section>
+</main><script>
+const fmt=(v,d=3)=>Number.isFinite(v)?Number(v).toFixed(d):'--';
+const qualityText=q=>['有效','样本不足','采样帧率过低','无法估算周期','摆角过大','g 超出合理范围','椭圆拟合误差过大','采样时长不足'][q]||'数据异常';
+async function post(path){await fetch(path,{method:'POST'});await load();}
+async function startCapture(){allSamples=[];lastIdx=-1;await post('/start');}
+function setLoc(){document.getElementById('refG').value=document.getElementById('loc').value;}
+async function recalibrate(){await fetch('/config',{method:'POST',body:new URLSearchParams({reset_calib:'1'})});await load();}
+async function calibrate(){
+ const g=document.getElementById('refG').value;
+ const body=new URLSearchParams();body.set('reference_g',g);
+ await fetch('/config',{method:'POST',body});
+ await post('/start');
+}
+async function saveLength(){
+ const body=new URLSearchParams();
+ body.set('length_m',document.getElementById('length').value);
+ await fetch('/config',{method:'POST',body});
+ await load();
+}
+async function saveWifi(){
+ const body=new URLSearchParams();
+ body.set('ssid',document.getElementById('ssid').value);
+ body.set('password',document.getElementById('pass').value);
+ await fetch('/config',{method:'POST',body});
+ await load();
+}
+function row(k,v){return `<tr><td>${k}</td><td>${v}</td></tr>`}
+async function load(){
+ const d=await (await fetch('/data.json',{cache:'no-store'})).json();
+ const a=d.analysis||{};
+ const calc=(v,d=3)=>a.ok?fmt(v,d):'--';
+ if(document.activeElement.id!=='length')document.getElementById('length').value=fmt(d.length_m,3);
+ if(document.activeElement.id!=='ssid')document.getElementById('ssid').value=d.staSsid||'';
+ document.getElementById('calibStatus').innerHTML=d.calibrated?'已校准 <a href="#" onclick="recalibrate()" style="color:#0f766e;font-size:13px">重新校准</a>':'未校准';
+ document.getElementById('calibBox').style.display=d.calibrated?'none':'block';
+ document.getElementById('net').textContent=`AP: ${d.apIp} / 局域网: ${d.staIp||'未连接'} / 状态: ${d.wifiStatus}`;
+  const remain=Math.max(0,Math.ceil(60-d.captureTime));
+  const statusText=d.capturing?`采样中 ${remain}s`:(a.ok?'已计算':'待采样');
+  document.getElementById('btnStart').disabled=d.capturing;
+  document.getElementById('btnStart').textContent=d.capturing?`剩余 ${remain}s`:'开始采样';
+  document.getElementById('metrics').innerHTML=[
+   ['状态',`<span class="status ${d.huskyReady?'ok':'bad'}">${statusText}</span>`],
+   ['样本数',d.sampleCount],
+   ['采样时间',`${fmt(d.captureTime,1)} s`],
+   ['最后坐标',`${fmt(d.lastX,1)}, ${fmt(d.lastY,1)}`],
+   ['摆长 L',`${fmt(d.length_m,3)} m`]
+  ].map(m=>`<div class="metric"><div class="label">${m[0]}</div><div class="value">${m[1]}</div></div>`).join('');
+ document.getElementById('result').innerHTML=[
+  row('数据质量',qualityText(a.quality_code)),
+  row('周期 T',`${calc(a.period_s,5)} s`),
+  row('频率 f',`${calc(a.frequency_hz,5)} Hz`),
+  row('重力加速度 g',`${calc(a.g_m_s2,5)} m/s²`),
+  row('标准值',`${fmt(d.refG,4)} m/s²`),
+  row('误差',d.analysis.ok?`${((a.g_m_s2-d.refG)/d.refG*100).toFixed(2)}%`:'--'),
+  row('有效帧率',`${fmt(a.capture_fps,2)} fps`)
+ ].join('');
+  document.getElementById('samples').innerHTML=d.samples.map(s=>`<tr><td>${s.i}</td><td>${fmt(s.t,3)}</td><td>${fmt(s.x,1)}</td><td>${fmt(s.y,1)}</td></tr>`).join('');
+  drawPlot(d);
+ }
+let allSamples=[],lastIdx=-1;
+function drawPlot(d){
+ const pts=d.samples||[];
+ if(!d.capturing&&!d.analysis.ok&&pts.length===0){allSamples=[];lastIdx=-1;}
+ if(d.capturing||d.analysis.ok){
+  for(const s of pts){if(s.i>lastIdx){allSamples.push(s);lastIdx=s.i;}}
+ }
+ if(allSamples.length<2)return;
+ const c=document.getElementById('plot'),w=c.width=600,h=c.height=360;
+ const ctx=c.getContext('2d');
+ const xs=allSamples.map(s=>s.x),ys=allSamples.map(s=>s.y);
+ const pad=20,xMin=Math.min(...xs)-10,xMax=Math.max(...xs)+10,yMin=Math.min(...ys)-10,yMax=Math.max(...ys)+10;
+ const sx=x=>w-pad-(x-xMin)/(xMax-xMin)*(w-2*pad);
+ const sy=y=>h-pad-(y-yMin)/(yMax-yMin)*(h-2*pad);
+ ctx.clearRect(0,0,w,h);
+ ctx.strokeStyle='#e0e0e0';ctx.lineWidth=.5;
+ for(let i=0;i<=4;i++){const x=pad+(w-2*pad)*i/4;ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();}
+ for(let i=0;i<=3;i++){const y=pad+(h-2*pad)*i/3;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();}
+ ctx.fillStyle='#999';ctx.font='10px system-ui';
+ ctx.fillText(Math.round(xMin),pad,pad-4);ctx.fillText(Math.round(xMax),w-pad-20,pad-4);
+ ctx.fillText(Math.round(yMin),pad+2,h-pad+12);ctx.fillText(Math.round(yMax),pad+2,pad+12);
+ for(let i=0;i<allSamples.length;i++){
+  const t=i/allSamples.length,px=sx(allSamples[i].x),py=sy(allSamples[i].y);
+  ctx.fillStyle=`rgb(${Math.round(41+214*t)},${Math.round(128-86*t)},${Math.round(255-214*t)})`;
+  ctx.beginPath();ctx.arc(px,py,3,0,2*Math.PI);ctx.fill();
+ }
+ const px0=sx(d.pivotX||0),py0=sy(d.pivotY||0);
+ ctx.strokeStyle='#c2410c';ctx.lineWidth=2;
+ ctx.beginPath();ctx.moveTo(px0-8,py0);ctx.lineTo(px0+8,py0);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(px0,py0-8);ctx.lineTo(px0,py0+8);ctx.stroke();
+ if(d.analysis&&d.analysis.ok){
+  const a=d.analysis,g=a.g_m_s2,T=a.period_s,f=a.frequency_hz,A=a.amplitude_px;
+  ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(pad,pad,260,100);
+  ctx.fillStyle='#fff';ctx.font='bold 13px system-ui';
+  ctx.fillText(`T=${fmt(T,4)} s  f=${fmt(f,4)} Hz`,pad+8,pad+18);
+  const errPct=(g-d.refG)/d.refG*100;
+  ctx.fillText(`g=${fmt(g,4)} m/s²  L=${fmt(d.length_m,3)} m`,pad+8,pad+38);
+  ctx.fillText(`标准 ${fmt(d.refG,4)}  误差 ${errPct.toFixed(2)}%`,pad+8,pad+58);
+  ctx.fillText(`θ=${fmt(a.theta_deg,1)}°  RMSE=${fmt(a.fit_rmse_px,1)} px`,pad+8,pad+76);
+ }
+}
+load();setInterval(load,1000);
+</script></body></html>

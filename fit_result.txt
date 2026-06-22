@@ -1,0 +1,7 @@
+freq=0.77659Hz period=1.2877s
+g_planar=9.5237m/s2
+x_amplitude=165.6px
+y_amplitude_at_f=37.6px
+y/x_ratio=0.2269
+
+y-oscillation detected -- possible conical motion.
