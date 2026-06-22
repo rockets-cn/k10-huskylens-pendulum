@@ -1,110 +1,121 @@
 # K10 单摆实验
 
-这个项目让 UNIHIKER K10 + HUSKYLENS 2 自己完成单摆实验：HUSKYLENS 2 用颜色识别追踪摆球中心，K10 通过 I2C 读取坐标，并在屏幕和网页上计算/显示单摆公式、频率、振幅和重力加速度 `g`。不需要 TF 卡，也不保存图片。
+UNIHIKER K10 + HUSKYLENS 2 自动完成单摆实验：HUSKYLENS 用颜色识别追踪摆球，K10 通过 I2C 读取坐标，2D 椭圆拟合计算频率和重力加速度 g。无需 TF 卡，不保存图片。
 
-## 演示视频
+## 硬件连接
 
-<video src="./单摆实验_测重力加速度.mp4" controls width="100%"></video>
-
-如果 GitHub 没有直接显示播放器，可以打开 [单摆实验_测重力加速度.mp4](./单摆实验_测重力加速度.mp4) 查看实验演示。
-
-## 硬件方案
-
-K10 只负责采样、计算和显示；HUSKYLENS 2 负责视觉定位。这样比只用 K10 内置摄像头更稳定，背景和光照对识别结果的影响更小。
-
-```text
-摆球 -> HUSKYLENS 2 Color Recognition -> I2C -> K10 -> f/T/A/theta/g -> 网页表格
+```
+HUSKYLENS 2 Gravity 4Pin → K10 I2C/Gravity 口
+VCC  → VCC
+GND  → GND
+SDA  → SDA
+SCL  → SCL
 ```
 
-连接方式：
+HUSKYLENS 2 设为 I2C 协议，进入 Color Recognition 模式，学习摆球颜色（默认 ID 1）。
 
-```text
-HUSKYLENS 2 Gravity 4Pin / Power Board -> K10 I2C/Gravity 口
-VCC                                    -> VCC
-GND                                    -> GND
-SDA                                    -> SDA
-SCL                                    -> SCL
-```
+## 快速开始
 
-在 HUSKYLENS 2 上把协议设置为 I2C，并进入 `Color Recognition`。用颜色明显的摆球或给摆球贴一块颜色标签，学习目标颜色，默认代码读取学习目标 `ID 1`。
+### 1. 烧录前设置
 
-## 1. 烧录前设置参数
-
-打开 [src/main.cpp](./src/main.cpp)，先改顶部这些常量：
+打开 `src/main.cpp`，修改顶部常量：
 
 ```cpp
-constexpr int kPivotX = 160;                // 悬点在 HUSKYLENS 画面中的 x 坐标
-constexpr int kPivotY = 24;                 // 悬点在 HUSKYLENS 画面中的 y 坐标
-constexpr uint16_t kTargetId = 1;           // HUSKYLENS 学习到的颜色 ID
-constexpr uint16_t kIgnoreFrameId = 2;      // 需要忽略的大框/背景颜色 ID
+constexpr int kPivotX = 160;           // 悬点在 HUSKYLENS 画面中的 x 坐标
+constexpr int kPivotY = 24;            // 悬点在 HUSKYLENS 画面中的 y 坐标
+constexpr uint16_t kTargetId = 1;      // 摆球颜色 ID
+constexpr uint16_t kIgnoreFrameId = 2; // 背景/大框颜色 ID（可忽略）
 ```
 
-如果 HUSKYLENS 2 学到的颜色不是 `ID 1`，把 `kTargetId` 改成屏幕上显示的 ID。
-如果画面里有固定大框或背景色块，可以单独学习成 `ID 2`，程序会忽略它，只用 `ID 1` 的摆球坐标计算。
+### 2. 首次 USB 烧录
 
-摆长 `L` 不需要重新编译，在网页的“实验参数”里手动输入并保存。默认值是 `0.420 m`，保存后会写入 K10 的 NVS。
-
-## 2. 上传固件
-
-建议用这个 PlatformIO 路径，避免系统里旧版 `pio` 的 `intelhex` 问题：
+必须 USB 烧录一次以写入 OTA 分区表：
 
 ```bash
-/Users/rockets/.platformio/penv/bin/pio run -t upload
+pio run -t upload -e unihiker
 ```
 
-## 3. 在 K10 上实验
+### 3. 连接 K10
 
-1. 让 HUSKYLENS 2 正对单摆摆动平面，并固定好镜头。
-2. 在 HUSKYLENS 2 上选择 `Color Recognition`，学习摆球颜色。
-3. 烧录后确认 K10 屏幕显示 `I2C:ok`。
-4. 连接 K10 建立的 WiFi：`k10-pendulum`，密码 `12345678`。
-5. 连接后系统通常会自动弹出配网页面；如果没有弹出，手动打开 `http://192.168.4.1/`。
-6. 按 `A` 或网页里的“开始采样”开始实时采样。
-7. 等摆动 5 到 10 个周期左右，按 `B` 或网页里的“停止并计算”停止并分析。
+- K10 建立 WiFi AP：`k10-pendulum`，密码 `12345678`
+- 浏览器打开 `http://192.168.4.1/`
+- K10 同时尝试连接局域网 WiFi（默认 SSID `DFRobot-guest`），成功后网页显示局域网 IP
 
-K10 会同时尝试连接局域网 WiFi。默认 SSID 是 `DFRobot-guest`，默认密码是 `dfrobot@2017`。配网成功后，网页会显示“局域网 IP”，同一局域网内可以用这个 IP 直接访问实验页面。
+### 4. 首次校准
 
-K10 会显示：
+1. 网页显示"未校准"状态，选择地点（上海/北京/广州/自定义）
+2. 输入或确认标准重力加速度 g 值
+3. 点击 **"开始校准"**，摆起单摆
+4. 60 秒后自动停止，反推摆长 L 并保存
+5. 状态变为"已校准"
 
-```text
-2D ellipse fit
-f, T, Amajor/Aminor, rmse, g, fps
+### 5. 测量
+
+点击 **"开始采样"**，摆起单摆，60 秒自动停止，屏幕上显示 g 值及误差百分比。
+
+后续可通过 OTA 无线更新固件，无需再次 USB 连接。
+
+## 网页功能
+
+- **运动轨迹**：XY 散点图，蓝色→红色渐变，显示摆球完整运动路径，红色十字标悬点
+- **计算结果**：周期 T、频率 f、重力加速度 g、标准值对比、误差百分比、有效帧率
+- **最近样本**：最新 3 条采样数据
+- **摆长管理**：校准后自动填入，可手动修改
+- **配网**：修改局域网 WiFi 并保存
+- **OTA 更新**：上传新固件无线更新
+- **下载 CSV**：导出完整采样数据
+
+## 算法说明
+
+### 2D 椭圆拟合
+
+```
+x(t) = x₀ + aₓcos(ωt) + bₓsin(ωt)
+y(t) = y₀ + aᵧcos(ωt) + bᵧsin(ωt)
 ```
 
-其中 `f` 是频率，`T` 是周期，`Amajor/Aminor` 是二维椭圆拟合得到的长短半轴，`rmse` 是拟合误差，`g=(2πf)^2L`，`fps` 是实际有效采样帧率。
+在合理 g 对应的频率范围内搜索最小二维残差频率，适配摄像头视角造成的椭圆投影。
 
-网页会显示：
+### 重力加速度
 
-- 实时状态：采样中/已计算、样本数、丢帧、最后坐标、目标颜色 ID、摆长和悬点。
-- HUSKYLENS 诊断：当前返回的 block 数、匹配到的 ID、色块尺寸。点击开始后如果样本数不增长，先看这里是否有 `ID 1`。
-- 计算结果表：二维椭圆拟合中心、长短半轴、拟合误差、周期、频率、角振幅、重力加速度和有效采样帧率。
-- 最近样本表：最近 80 个 `(t, x, y)` 采样点。
-- 实验参数：手动输入摆长 `L`。
-- 配网：修改局域网 WiFi，并保存到 K10。
-- `samples.csv`：下载本次采样的完整表格。
-- `/ota`：上传新固件的 HTTP OTA 表单。
+校准模式下反推摆长：`L = g₀ / (2πf)²`
 
-## 位置获取方式
+测量模式下计算重力加速度：`g = (2πf)² × L`
 
-每次采样时，K10 会：
+### 数据质量
 
-1. K10 启动时把 HUSKYLENS 2 切到 `Color Recognition` 算法。
-2. 通过 I2C 向 HUSKYLENS 2 请求 `ID 1` 的 color block。
-3. 读取 block 的中心坐标 `(xCenter, yCenter)`。
-4. 把坐标和当前时间戳记入采样数组。
-5. 停止后同时拟合 `x(t)` 和 `y(t)` 的同频正弦/余弦模型，适配摆球在画面中呈椭圆运动的情况。
+自动检测：采样时长不足、拟合误差过大、g 超出合理范围等，给出质量标记。
 
-频率估算不再只看横向过零点。程序会在合理重力加速度对应的频率范围内搜索，让 `x = x0 + ax cos(ωt) + bx sin(ωt)` 和 `y = y0 + ay cos(ωt) + by sin(ωt)` 的二维残差最小。再由拟合出的椭圆长半轴估算角振幅。若采样时长不足、椭圆拟合误差过大、摆角过大，网页会把数据质量标为异常，而不是硬给出一个离谱的 `g`。
+## OTA 无线更新
 
-## 注意
+首次 USB 烧录后，后续可通过 WiFi 更新：
 
-- 摆角建议小于 `10°`，这样小角度公式更准。
-- `g` 的准确度主要取决于摆长 `kPendulumLengthM` 和频率测量。
-- 悬点坐标 `kPivotX/kPivotY` 主要影响角振幅 `theta`。
-- 如果 K10 显示 `I2C:check`，检查 HUSKYLENS 2 是否设为 I2C、4Pin 线是否接好、HUSKYLENS 2 是否正常供电。
-- 如果样本数不增长，通常是 HUSKYLENS 2 没有看到已学习的颜色；重新学习颜色、换更醒目的摆球颜色、调整镜头位置或避开背景同色物体。
-- 第一次启用 OTA 分区后需要 USB 烧录一次。之后只要固件仍保留网页 `/ota`，可以在网页上继续无线更新。
+```bash
+# 编译
+pio run -e unihiker
+
+# OTA 上传（替换为实际 IP）
+curl -F "firmware=@.pio/build/unihiker/firmware.bin" http://192.168.x.x/ota
+```
+
+也可在网页的 OTA 表单直接上传。
+
+分区表 `partitions.csv` 保留了 K10 AI 模型区域（`0x510000` 起），不影响语音识别等功能。
+
+## 注意事项
+
+- 摆角建议 < 20°，以保证小角度近似的准确性
+- g 的准确度主要取决于校准得到的摆长和频率测量精度
+- 摄像头透视畸变会导致像素计算的摆角偏大，算法已忽略该值
+- K10 屏幕显示 `I2C:check` 时检查 HUSKYLENS 连接
+- 样本数不增长通常是 HUSKYLENS 没看到已学颜色，重新学习或调整光照
+- 网页自动每 60 秒停止采样，kMaxSamples=200 作为备选停止条件
 
 ## 可选：电脑端复核
 
-[tools/analyze_pendulum.py](./tools/analyze_pendulum.py) 仍保留，可用于视频或图片序列复核结果。
+`tools/analyze_pendulum.py` 可用于视频或图片序列独立复核结果。
+
+```bash
+pip install -r requirements.txt
+python tools/analyze_pendulum.py --video 单摆实验_测重力加速度.mp4 --color red
+```
