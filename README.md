@@ -1,6 +1,8 @@
 # K10 单摆实验
 
-UNIHIKER K10 + HUSKYLENS 2 自动完成单摆实验：HUSKYLENS 用颜色识别追踪摆球，K10 通过 I2C 读取坐标，2D 椭圆拟合计算频率和重力加速度 g。无需 TF 卡，不保存图片。
+UNIHIKER K10 + HUSKYLENS 2 自动完成单摆实验
+
+![网页截图](./screenshot.png)：HUSKYLENS 用颜色识别追踪摆球，K10 通过 I2C 读取坐标，2D 椭圆拟合计算频率和重力加速度 g。无需 TF 卡，不保存图片。
 
 ## 硬件连接
 
